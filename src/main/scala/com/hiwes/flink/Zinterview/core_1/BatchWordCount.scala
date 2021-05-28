@@ -12,7 +12,7 @@ object BatchWordCount {
   def main(args: Array[String]): Unit = {
 
     val env: ExecutionEnvironment = ExecutionEnvironment.getExecutionEnvironment
-    val data: DataSet[String] = env.readTextFile("file:///Users/hiwes/data/test1.txt")
+    val data: DataSet[String] = env.readTextFile("path")
 
     import org.apache.flink.api.scala._
 

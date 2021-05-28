@@ -19,7 +19,7 @@ import org.apache.flink.streaming.api.functions.sink.filesystem.StreamingFileSin
 import org.apache.flink.streaming.api.functions.sink.filesystem.bucketassigners.BasePathBucketAssigner
 import org.apache.flink.streaming.api.functions.sink.filesystem.rollingpolicies.OnCheckpointRollingPolicy
 import org.apache.flink.streaming.api.functions.source.{ParallelSourceFunction, RichParallelSourceFunction, RichSourceFunction, SourceFunction}
-import org.apache.flink.streaming.api.scala.StreamExecutionEnvironment
+import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironment}
 import org.apache.flink.streaming.connectors.kafka.partitioner.FlinkKafkaPartitioner
 import org.apache.flink.streaming.connectors.kafka.{FlinkKafkaConsumer010, FlinkKafkaProducer010, KafkaSerializationSchema}
 import org.apache.flink.streaming.connectors.redis.RedisSink
@@ -88,8 +88,8 @@ object DataStream1 {
    * 参数为一个SourceFunction接口的实例化对象.
    * Flink自带了许多实现的子类，最常用的为以下3个:
    * 1、RichSourceFunction(接口类):  带有Rich功能的SourceFunction接口实现类（不可并行）;
-   * 2、ParallelSourceFunction(接口):  可并行的SourceFunction接口实现类;
-   * 3、RichParallelSourceFunction(抽象类): 可并行的带有rich功能的SourceFunction接口实现类.
+   * 2、ParallelSourceFunction(接口):  可并行的、SourceFunction接口的实现接口;
+   * 3、RichParallelSourceFunction(抽象类): 可并行的、带有rich功能的、SourceFunction接口实现类.
    * 此外，还可以实现自定义的SourceFunction.
    */
   def source4DataStream(env: StreamExecutionEnvironment): Unit = {
@@ -99,16 +99,17 @@ object DataStream1 {
      * 1、fromElements 从元素中获取数据,【不可并行】,底层调用的fromCollection().
      * 2、fromCollection 从集合中获取数据,【不可并行】,底层调用addSource(),传入的是FromElementsFunction类(SourceFunction接口的实现子类)
      * 3、socketTextStream 从socket中获取数据,【不可并行】,底层调用addSource(),传入的是SocketTextStreamFunction类(SourceFunction的实现子类)
-     * 4、generateSequence 生成一个序列,【可以并行】,底层调用StatefulSequenceSource类(RichParallelSourceFunction的实现子类)
-     * 5、fromParallelCollection 从集合中获取数据,【可以并行】,底层调用addSource(),传入的是FromSplittableorFunction类(FichParallelSourceFunction的实现子类)
-     * 6、readTextFile 从文件中获取数据,【可以并行】,底层调用addSource(),传入的是ContinuousFileMonitoringFunction类(RichSourceFunction的实现子类)
+     * 4、generateSequence 生成一个序列,【————可以并行————】,底层调用StatefulSequenceSource类(RichParallelSourceFunction的实现子类)
+     * 5、fromParallelCollection 从集合中获取数据,【————可以并行————】,底层调用addSource(),传入的是FromSplittableorFunction类(FichParallelSourceFunction的实现子类)
+     * 6、readTextFile 从文件中获取数据,【————可以并行————】,底层调用addSource(),传入的是ContinuousFileMonitoringFunction类(RichSourceFunction的实现子类)
      *
      * = = = = = = = = = = = = = = = = =
      * 要使用addSource()实现自定义Souce，关于并行度需要注意的是:
      * 1、直接提供SourceFunction的实现，【不可并行】
      * 2、直接提供RichSourceFunction的实现，【不可并行】
-     * 3、直接提供ParallelSourceFunction的实现，【可以并行】
-     * 4、直接提供RichParallelSourceFunction的实现，【可以并行】
+     *
+     * 3、直接提供ParallelSourceFunction的实现，【————可以并行————】
+     * 4、直接提供RichParallelSourceFunction的实现，【————可以并行————】
      */
     import org.apache.flink.api.scala._
     // 基于本地集合的非并行Source.
@@ -121,8 +122,8 @@ object DataStream1 {
     //    env.execute()
 
     // 基于本地集合的并行Source.
-    //    val source1 = env.generateSequence(1, 10).setParallelism(6)
-    //    val source2 = env.fromParallelCollection(new NumberSequenceIterator(1, 10))
+    val source1: DataStream[Long] = env.generateSequence(1, 10).setParallelism(6)
+    val source2: DataStream[lang.Long] = env.fromParallelCollection(new NumberSequenceIterator(1, 10))
     //
     //    source1.print()   // parallelism = 6
     //5> 8
@@ -148,10 +149,9 @@ object DataStream1 {
     //4> 7
     //    println(env.getExecutionPlan)
 
-
     // 基于文件的Source.
     //    val localFileSource = env.readTextFile("file:///Users/hiwes/data/input/score.csv","UTF-8")
-    //    val hdfsFileSource = env.readTextFile("hdfs://hiwes:8020/inpit/license.txt")
+    //    val hdfsFileSource = env.readTextFile("hdfs://hiwes:8020/input/license.txt")
     //    localFileSource.print()
     //    hdfsFileSource.print()
 
@@ -160,10 +160,10 @@ object DataStream1 {
     //    socketSource.print()
 
     // 自定义实现SourceFunction接口.
-    //    ownSourceFunciton(env)
+    ownSourceFunciton(env)
 
     // 基于Kafka的Source.
-    //    kafkaSource(env)
+    kafkaSource(env)
 
     // 基于MySQL的Source.
     mysqlSource(env)
@@ -225,6 +225,7 @@ object DataStream1 {
         // 生成id、userId、money、time
         val id = UUID.randomUUID().toString
         val userId = random.nextInt(99).toString
+
         val money = random.nextInt(999)
         val time = System.currentTimeMillis()
 
@@ -237,7 +238,6 @@ object DataStream1 {
          * ""+x或x+""效率最低.
          */
       }
-
     }
 
     override def cancel(): Unit = {
@@ -312,17 +312,16 @@ object DataStream1 {
     properties.setProperty("enable.auto.commit", "false") // 是否自动提交偏移量
 
     val topic = "flinktest"
-
     /**
      * KafkSoncumser需要知道如何将Kafka的二进制数据转换成Java/Scala对象,常用的反序列化Schema有:
      * 1、SimpleStringSchema: 按字符串方式进行序列化和反序列化.
      * 2、TypeInformationSerializationSchema: 适合读写均是Flink的场景.
      * -------基于Flink的TypeInformation来创建Schema，这种Flink-specific的反序列化会比其他通用的序列化方式性能更高.
-     * 3、JSONDeserializationSchema: 可以吧序列化后的json反序列化为ObjectNode，可通过Object.get("field").as(Int/String/...)()来访问指定字段.
+     * 3、JSONDeserializationSchema: 可以把序列化后的json反序列化为ObjectNode，可通过Object.get("field").as(Int/String/...)()来访问指定字段.
      */
     val schema = new SimpleStringSchema()
-    //    val schema = new TypeInformationSerializationSchema[]()
-    //    val schema = new JSONKeyValueDeserializationSchema()
+    // val schema = new TypeInformationSerializationSchema[]()
+    // val schema = new JSONKeyValueDeserializationSchema()
 
     val kafkaConsumer: FlinkKafkaConsumer010[String] = new FlinkKafkaConsumer010[String](
       topic, schema, properties)
@@ -411,7 +410,6 @@ object DataStream1 {
     // 销毁实例执行一次，适合用来做关闭连接.
     override def close(): Unit = {
       super.close()
-
       if (this.ps != null) this.ps.close()
       if (this.connection != null) this.connection.close()
     }
@@ -562,12 +560,12 @@ object DataStream1 {
     //    source.printToErr("StdErr前缀打印>>>")
 
     // 基于文件的Sink.
-    //    val source = env.fromElements(
-    //      (19, "潇潇", 170.50),
-    //      (11, "甜甜", 168.8),
-    //      (16, "刚刚", 178.8),
-    //      (19, "蛋蛋", 179.99)
-    //    )
+    //        val source = env.fromElements(
+    //          (19, "潇潇", 170.50),
+    //          (11, "甜甜", 168.8),
+    //          (16, "刚刚", 178.8),
+    //          (19, "蛋蛋", 179.99)
+    //        )
     //    // 写出到本地文件
     //    source.writeAsText("file:///Users/hiwes/data/output/SinktoLocalFile.txt", FileSystem.WriteMode.OVERWRITE)
     //    // 写出到HDFS

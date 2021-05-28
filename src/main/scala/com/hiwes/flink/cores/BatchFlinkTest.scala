@@ -1,8 +1,6 @@
 package com.hiwes.flink.cores
 
-import org.apache.flink.api.common.time.Time
 import org.apache.flink.api.scala.ExecutionEnvironment
-import org.apache.flink.streaming.api.scala.StreamExecutionEnvironment
 
 /**
  * 使用Scala批处理离线数据。
@@ -27,9 +25,7 @@ object BatchFlinkTest {
       .groupBy(0)
       .sum(1)
       .print()
-
   }
-
 
   def testBatch(): Unit = {
     val path = "file:///Users/hiwes/data/test1.txt"
@@ -45,7 +41,6 @@ object BatchFlinkTest {
       .groupBy(0)
       .sum(1)
       .print()
-
   }
-
+  
 }

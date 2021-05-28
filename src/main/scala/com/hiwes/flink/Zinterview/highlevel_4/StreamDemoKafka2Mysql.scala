@@ -31,7 +31,6 @@ import org.apache.flink.streaming.api.functions.sink.{SinkFunction, TwoPhaseComm
  * ------等将异常数据处理完成之后，再重新启动这个Flink程序，它会自动从上一次成功的checkpoint中继续消费数据，以此来达到Kafka到Mysql的Exactly-Once。
  *
  */
-@SuppressWarnings("all")
 object StreamDemoKafka2Mysql {
   def main(args: Array[String]): Unit = {
     val env = StreamExecutionEnvironment.getExecutionEnvironment
@@ -118,6 +117,7 @@ class MySqlTwoPhaseCommitSink() extends TwoPhaseCommitSinkFunction[ObjectNode, C
   override protected def beginTransaction: Connection = {
     val url = "jdbc:mysql://hiwes:3306/test?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull&useSSL=false&autoReconnect=true"
     val connection = new DBConnectUtils().getConnection(url, "root", "root")
+
     System.err.println("start beginTransaction......." + connection)
     connection
   }
@@ -141,7 +141,6 @@ class MySqlTwoPhaseCommitSink() extends TwoPhaseCommitSinkFunction[ObjectNode, C
   override protected def commit(connection: Connection): Unit = {
     System.err.println("start commit......." + connection)
 
-    new
     new DBConnectUtils().commit(connection)
   }
 

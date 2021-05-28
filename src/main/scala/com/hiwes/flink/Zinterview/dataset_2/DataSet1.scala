@@ -26,24 +26,24 @@ object DataSet1 {
     val env: ExecutionEnvironment = ExecutionEnvironment.getExecutionEnvironment
 
     // 1.基于本地集合创建DataSet
-    //    val data = createDataSetByLocal(env).setParallelism(1)
-    //    data.getParallelism // 2.获取指定算子并行度
+    val data = createDataSetByLocal(env).setParallelism(1)
+    data.getParallelism // 2.获取指定算子并行度
 
     // 3.基于文件创建Source
-    //    createDataSetByCSVFile(env)
-    //    traverseDirectory(env)
+    createDataSetByCSVFile(env)
+    traverseDirectory(env)
 
     // 4.DataSet的Transformation.
-    //    transformations4DataSet(env)
+    transformations4DataSet(env)
 
     // 5.DataSet的Sinks.
-    //    sinks4DataSet(env)
+    sinks4DataSet(env)
 
     // 6.DataSet的广播变量.
-    //    broadcast4DataSet(env)
+    broadcast4DataSet(env)
 
     // 7.DataSet的累加器和计数器.
-    //    accumulatorsAndCounters4DataSet(env)
+    accumulatorsAndCounters4DataSet(env)
 
     // 8.DataSet的分布式缓存.
     distributedCache4DataSet(env)
@@ -67,6 +67,7 @@ object DataSet1 {
 
     //    env.generateSequence()  // 基于Sequence
     env.generateSequence(1, 10)
+
   }
 
   /**
@@ -128,6 +129,7 @@ object DataSet1 {
     env.readCsvFile[JOB]("/Users/hiwes/data/people.csv"
       , "\n", ",", null, ignoreFirstLine = true, null, false)
       .print()
+
   }
 
   case class JOB(name: String, age: Int, job: String)
@@ -181,10 +183,10 @@ object DataSet1 {
   def transformations4DataSet(env: ExecutionEnvironment): Unit = {
     import org.apache.flink.api.scala._
     // 使用map操作，读取apache.log文件中的字符串数据转换成ApacheLogEvent对象
-    //    val data: DataSet[String] = env.readTextFile("file:///Users/hiwes/data/apache.log")
-    //    data.map(_.toLowerCase())
-    //      .map(x => {
-    //        val arr = x.split(" ")
+    //        val data: DataSet[String] = env.readTextFile("file:///Users/hiwes/data/apache.log")
+    //        data.map(_.toLowerCase())
+    //          .map(x => {
+    //            val arr = x.split(" ")
     //        val simpledataFormat = new SimpleDateFormat("dd/MM/yyyy:HH:mm:ss")
     //        ApacheLogEvent(arr(0), arr(1).toInt, simpledataFormat.parse(arr(2)).getTime, arr(3), arr(4))
     //      })
@@ -281,19 +283,19 @@ object DataSet1 {
     /**
      * 注意，aggregate只能用于元组
      */
-    //    val data = env.readTextFile("file:///Users/hiwes/data/apache.log")
-    //    val reduceGroupSource = data.map(x => (x.toLowerCase().split(" ")(0), 1))
-    //      .groupBy(0)
-    //      .reduceGroup(
-    //        (values: Iterator[(String, Int)], out: Collector[(String, Int)]) => {
-    //          var key: String = null
-    //          var count = 0
-    //          for (value <- values) {
-    //            key = value._1
-    //            count += value._2
-    //          }
-    //          out.collect((key, count))
-    //        })
+    //        val data = env.readTextFile("file:///Users/hiwes/data/apache.log")
+    //        val reduceGroupSource: DataSet[(String, Int)] = data.map(x => (x.toLowerCase().split(" ")(0), 1))
+    //          .groupBy(0)
+    //          .reduceGroup(
+    //            (values: Iterator[(String, Int)], out: Collector[(String, Int)]) => {
+    //              var key: String = null
+    //              var count = 0
+    //              for (value <- values) {
+    //                key = value._1
+    //                count += value._2
+    //              }
+    //              out.collect((key, count))
+    //            })
     //
     //    val aggregationMax = reduceGroupSource.aggregate(Aggregations.MAX, 1)
     //    val aggregationMin = reduceGroupSource.aggregate(Aggregations.MIN, 1)
@@ -574,12 +576,12 @@ object DataSet1 {
    */
   def broadcast4DataSet(env: ExecutionEnvironment): Unit = {
     import org.apache.flink.api.scala._
-    val studentInfoDataSet = env.fromElements(
+    val studentInfoDataSet: DataSet[(Int, String)] = env.fromElements(
       (1, "王大锤"),
       (2, "潇潇"),
       (3, "甜甜")
     )
-    val scoreInfoDataSet = env.fromElements(
+    val scoreInfoDataSet: DataSet[(Int, String, Int)] = env.fromElements(
       (1, "数据结构", 99),
       (2, "英语", 100),
       (3, "C++", 96),
@@ -593,6 +595,7 @@ object DataSet1 {
 
       // open方法，在实例化的开始会执行一次.
       override def open(parameters: Configuration): Unit = {
+        // 订阅 广播变量.
         val broadcastVariable: util.List[(Int, String)] = getRuntimeContext.getBroadcastVariable("student")
         val ite = broadcastVariable.iterator()
         while (ite.hasNext) {
@@ -606,18 +609,17 @@ object DataSet1 {
         val stuName = this.map.getOrElse(stuId, "未知学生姓名")
         (stuName, value._2, value._3)
       }
-    }).withBroadcastSet(studentInfoDataSet, "student")
+    }).withBroadcastSet(studentInfoDataSet, "student") // 发布.
       .print()
 
     /**
      * 使用broadcast的注意事项:
      * 1、在使用的时候需要留意，小数据才能进行广播，否则可能出现OOM问题;
-     * 2、使用broadcast的时候可以根据不同的算子来进行获取，在每个Rich方法内部，都能得到重写后的override 方法，包括map和open，
+     * 2、使用broadcast的时候可以根据不同的算子来进行获取，在每个Rich方法内部，都能得到重写后的 override 方法，包括map和open，
      * ------其中open()是在实例化的时候会直接运行一次的方法，可以作为初始化使用.
      * 3、在open()方法内部进行外部广播变量的获取是允许的，所以在真正的map方法之前其实有很多东西已经进行处理.
      * 4、可以在map()算子的尾部跟withBroadcastSet(datset，"广播名").
      */
-
   }
 
   /**

@@ -35,9 +35,9 @@ import org.apache.flink.streaming.api.functions.source.SourceFunction
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor
 import org.apache.flink.streaming.api.scala.async.{ResultFuture, RichAsyncFunction}
 import org.apache.flink.streaming.api.scala.function.WindowFunction
-import org.apache.flink.streaming.api.scala.{DataStream, OutputTag, StreamExecutionEnvironment}
+import org.apache.flink.streaming.api.scala.{DataStream, OutputTag, StreamExecutionEnvironment, WindowedStream}
 import org.apache.flink.streaming.api.watermark.Watermark
-import org.apache.flink.streaming.api.windowing.assigners.{ProcessingTimeSessionWindows, TumblingEventTimeWindows, TumblingProcessingTimeWindows}
+import org.apache.flink.streaming.api.windowing.assigners.{EventTimeSessionWindows, GlobalWindows, ProcessingTimeSessionWindows, SlidingEventTimeWindows, TumblingEventTimeWindows, TumblingProcessingTimeWindows}
 import org.apache.flink.streaming.api.windowing.time.Time
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer011
@@ -64,45 +64,35 @@ object FlinkHighLevel1 {
     // 1.SQL&Table API.
 
     // 2.FlinkSQL案例.
-    //    flinkSQLTest4Batch(env)
-    //    flinkSQLTest4Stream(senv)
+    flinkSQLTest4Batch(env)
+    flinkSQLTest4Stream(senv)
 
     // 3.Flink的Window操作.
-    //    flinkWindowTest(senv)
+    flinkWindowTest(senv)
 
     // 4.Flink的WaterMark.
-    //    waterMarkTest(senv)
-    //    allowedLatenessTest(senv)
-    //    sideOutputDataTest(senv)
+    waterMarkTest(senv)
+    allowedLatenessTest(senv)
+    sideOutputDataTest(senv)
 
     // 5.Flink的异步IO.
-    //    asyncIOTest(senv)
+    asyncIOTest(senv)
 
     // 6.Flink的状态State管理.
-    //    stateCheckpointTest(senv)
+    stateCheckpointTest(senv)
 
     // 7.Flink的容错机制.
-    //    checkpointTest(senv)
-    //    checkpointTest2(senv)
-    //    checkpointTest3(senv)
-    //    checkpointTestLast(senv)
-    //    savePointTest(senv)
+    checkpointTest(senv)
+    checkpointTest2(senv)
+    checkpointTest3(senv)
+    checkpointTestLast(senv)
+    savePointTest(senv)
 
     // 8.Flink的End-to-End Exactly-Once语义.
     end2EndExactlyOnceTest(senv)
 
     // 9.Flink的ProcessFunction API.
-    //    systemMonitoringTest(senv)
-
-    // 10.Flink综合案例————双流Join.
-
-
-    // 11.FLink综合案例————热点TopN.
-
-
-    // 12.Flink综合案例————布隆过滤器.
-
-
+    systemMonitoringTest(senv)
   }
 
   // 1.SQL&Table API.
@@ -149,7 +139,6 @@ object FlinkHighLevel1 {
     val tableResult2: Table = tEnv.sqlQuery("Select sex, Max(age) as maxAge from student where age >= 10 group by sex")
     val queryResultDataSet2: DataSet[QueryResult] = tEnv.toDataSet(tableResult2)
     queryResultDataSet2.print()
-
   }
 
   case class QueryResult(sex: String, maxAge: Int)
@@ -164,7 +153,7 @@ object FlinkHighLevel1 {
     val socketStream = senv.socketTextStream("hiwes", 9999)
     val queryDataStream = socketStream.map(x => QueryFieldOfID(x.toInt))
 
-    val studentDataStreamSource = senv.fromElements(
+    val studentDataStreamSource: DataStream[Student3] = senv.fromElements(
       Student3(1, "潇潇", 11, "female"),
       Student3(2, "刚刚", 10, "male"),
       Student3(3, "蛋蛋", 9, "male"),
@@ -179,8 +168,8 @@ object FlinkHighLevel1 {
     )
 
     // 将两个DataStream注册为Table对象.
-    val queryFieldTable = tEnv.fromDataStream(queryDataStream)
-    val studentTable = tEnv.fromDataStream(studentDataStreamSource)
+    val queryFieldTable: Table = tEnv.fromDataStream(queryDataStream)
+    val studentTable: Table = tEnv.fromDataStream(studentDataStreamSource)
 
     // Table API形式.
     val tableResult1: Table = queryFieldTable.leftOuterJoin(studentTable, "id2 = id").select("id2 as idn,name, age,sex")
@@ -206,7 +195,7 @@ object FlinkHighLevel1 {
   // 3.Flink的Window操作.
   /**
    * Flink认为Batch是Streaming的一个特例，所以Flink底层引擎是一个流式引擎，只是在上层实现了流处理和批处理.
-   * window就是从Streaming到Batch的一个桥梁，Flink提供了非常完善的窗口机制.
+   * Window就是从Streaming到Batch的一个桥梁，Flink提供了非常完善的窗口机制.
    * Window可以分为2类:
    * 1、CountWindow: 按指定的数据条数生成一个Window，与时间无关.
    * -------滚动计数窗口，每隔n条数据，统计前n条数据;
@@ -236,13 +225,13 @@ object FlinkHighLevel1 {
    * 对于时间窗口来说，最主要的就是时间，那么这个时间是怎么定义的呢？Flink针对时间有3种类型:
    * 1、EventTime  事件时间. 事件发生的时间.
    * 2、IngestionTime  摄入时间. 某个Flink节点的SourceOperator接收到数据的时间.如: 某个Source消费到kafka的时间.
-   * 3、ProcessingTime 处理时间. 某个Flink节点执行某个Operator时间.如: timeWindow接收到数据的时间.
-   * 在Flink的流式处理中，绝大部分业务都会使用EventTime,一般在EventTime不能使用的时候，才被迫使用Processing或者IngestionTime.
-   * env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
+   * 3、ProcessingTime 处理时间. 某个Flink节点执行某个Operator的时间.如: timeWindow接收到数据的时间.
+   * 在Flink的流式处理中，绝大部分业务都会使用EventTime,一般在EventTime不能使用的时候，才被迫使用ProcessingTime或者IngestionTime.
+   * > env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
    *
    * 【窗口的范围】
    * 窗口的判断按毫秒为单位,如果窗口长度为5000ms,
-   * 窗口的开始: start   =  0
+   * 窗口的开始: start = 0
    * 窗口的结束: start + 5000 - 1  = 4999
    * 窗口不会一直存在，当达到某些条件后，窗口就会执行触发计算+关闭窗口的动作。
    * 窗口的关闭和触发有两个步骤: 触发，对窗口内的数据进行计算; 关闭，数据就无法再进入窗口了.
@@ -251,18 +240,18 @@ object FlinkHighLevel1 {
    * ---2. <= 结束时间.
    * 如4999就属于这个窗口，5000就不属于这个窗口.
    * 如果要使用【处理时间ProcessingTime或摄入时间IngestionTime】.
-   * ------ 窗口会按照系统时间进行判断。如果当前系统时间 >= 窗口结束时间，则窗口关闭并处罚计算.
+   * ------ 窗口会按照系统时间进行判断。如果当前系统时间 >= 窗口结束时间，则窗口被关闭并触发计算.
    * ------ 比如: 0——5000的窗口，系统时间走到了 >= 4999就会触发窗口计算和关闭.
    * 如果要使用【事件时间EventTime】.
-   * ------ 当新进入一条数据的时候，其时间时间 >= 某个窗口的结束时间,则窗口被关闭并除法计算.
+   * ------ 当新进入一条数据的时候，其事件时间 >= 某个窗口的结束时间,则窗口被关闭并触发计算.
    * ------ 比如: A窗口是0——5000，B窗口是5000——10000,那么:
-   * ------ 当数据事件时间 >= 4999的数据进来之后，会导致窗口A进行关闭和除法计算.
+   * ------ 当数据事件时间 >= 4999的数据进来之后，会导致窗口A被关闭和触发计算.
    * 如果要使用【水印WaterMark】.
-   * ------ 当新进入的一条数据，其水印时间 >= 某个窗口的结束时间，窗口被关闭并除法计算.
+   * ------ 当新进入的一条数据，其水印时间 >= 某个窗口的结束时间，窗口被关闭并触发计算.
    * 总结:
    * --- 处理时间通过当前系统时间决定窗口触发和关闭，较为稳定，比如每5s窗口就每隔5s触发一次.
-   * --- 事件时间通过进入flink的数据，所带的事件时间来决定是否关闭窗口，只要数据不仅如此flink，就一直不会关闭，不稳定，取决于数据.
-   * --- 水印时间基于数据的事件时间，一样开闭不稳定，去月觉数据是否到来和事件时间的多少.
+   * --- 事件时间通过进入flink的数据，所带的事件时间来决定是否关闭窗口，只要数据不进入此flink，就一直不会关闭。不稳定，取决于数据.
+   * --- 水印时间基于数据的事件时间，一样开闭不稳定，取决于数据是否到来和事件时间的多少.
    *
    * @param senv
    */
@@ -297,8 +286,8 @@ object FlinkHighLevel1 {
      * 针对分流后的流对象————window:
      * timeWindow()
      * countWindow()
-     * countWindowAll()
      * timeWindowAll()
+     * countWindowAll()
      *
      * 【注意】如果设置为了事件时间EventTime，一定要告知Flink，在被处理的数据中事件时间是谁.
      * assignTimestampAndWaterMarks.  告知事件时间在被处理的数据中是哪个字段.
@@ -335,7 +324,7 @@ object FlinkHighLevel1 {
     val sumOfWindowAll = randomIntSource.timeWindowAll(Time.seconds(5)).sum(1)
 
     // 实现窗口2
-    val sumOfWindow = randomIntSource.keyBy(0).timeWindowAll(Time.seconds(5)).sum(1)
+    val sumOfWindow = randomIntSource.keyBy(0).timeWindow(Time.seconds(5)).sum(1)
 
     sumOfWindowAll.print("Sum all >>>")
     sumOfWindow.print("Sum each key >>>")
@@ -365,6 +354,8 @@ object FlinkHighLevel1 {
 
   // 3.1.2 滑动时间窗口，有重叠数据.
   /**
+   *
+   * timwWindow(size, slide)
    * slide > size,滑动距离大于窗口长度，会有数据丢失;
    * slide < size,滑动距离小于窗口长度，会有数据重复;
    * slide = size,滑动距离等于窗口长度，等于滚动窗口,不丢失不重复.
@@ -376,10 +367,10 @@ object FlinkHighLevel1 {
 
     // （窗口长度size,滑动距离slide）每隔slide,统计前size的数据.
     val sumAll = source.timeWindowAll(Time.seconds(2), Time.seconds(5)).sum(1)
-    //    val sumEachKey = source.keyBy(0).timeWindow(Time.seconds(10), Time.seconds(5)).sum(1)
+    val sumEachKey = source.keyBy(0).timeWindow(Time.seconds(10), Time.seconds(5)).sum(1)
 
     sumAll.print("sum all >>> ")
-    //    sumEachKey.print("sum each key >>> ")
+    sumEachKey.print("sum each key >>> ")
 
     senv.execute()
   }
@@ -411,7 +402,7 @@ object FlinkHighLevel1 {
   }
 
   /**
-   * 3.3 会话窗口. 是基于时间的窗口, 针对时间的窗口非，分为3类:
+   * 3.3 会话窗口. 是基于时间的窗口, 针对时间的窗口，分为3类:
    * 1、TumblingEventTimeWindows.  滑动事件时间窗口
    * 2、SlidingEventTimeWindows.   滚动事件时间窗口
    * 3、EventTimeSessionWindows.   事件时间会话窗口.会话窗口的窗口大小，由数据本身决定.比如:
@@ -438,7 +429,7 @@ object FlinkHighLevel1 {
    * --------------------
    * key,42
    * --------------------
-   * 当相邻两条数据相差 >= 6s的时候，会触发窗口
+   * 注意 ——————> 当相邻两条数据相差 >= 6s的时候，会触发窗口
    * 窗口大小 = （第一条数据的时间, 第一个与相邻数据相差 >= 6的时间 + 6）
    * 意思就是说，窗口内包含的数据是“活跃的”.
    * 举例:
@@ -455,6 +446,17 @@ object FlinkHighLevel1 {
 
     source.keyBy(0).window(ProcessingTimeSessionWindows.withGap(Time.seconds(5))).sum(1)
       .print(sdf.format(new Date()) + "| each key print >>> ")
+
+    //     * 1、DynamicEventTimeSessionWindows  动态事件时间会话窗口.
+    //     * 2、DynamicProcessingTimeSessionWindows 动态处理时间会话窗口.
+    //     * 【常用】3、EventTimeSessionWindows 事件时间会话窗口.
+    //     * 【常用】4、GlobalWindows 全局窗口（计数窗口使用的这个实现）
+    //     * 5、MergingWindowAssigner 合并窗口（一般不直接使用）
+    //     * 【常用】6、ProcessingTimeSessionWindows  处理时间会话窗口.
+    //     * 【常用】 7、SlidingEventTimeWindows 滑动事件时间窗口.
+    //     * 【常用】8、TumblingEventTimeWindows  滚动事件时间窗口.
+    //     * 【常用】9、TumblingProcessingTimeWindows 滚动处理时间窗口.
+
     senv.execute()
   }
 
@@ -530,17 +532,17 @@ object FlinkHighLevel1 {
    * 如果按事件时间来计算，这个窗口当进入一条数据，其EventTime > 10:00的时候会关闭，因为这个数据延迟，会因为别的正常顺序的数据进入Flink导致窗口提前关闭.
    * 即:
    * 处理时间窗口, 按照当前系统时间 来判断进行窗口关闭.
-   * 事件时间窗口, 按照进入数据的事件时间 来判断是狗关闭窗口，如果进来的一条新数据是下一个窗口的数据，会关闭上一个窗口.
+   * 事件时间窗口, 按照进入数据的事件时间 来判断是否关闭窗口，如果进来的一条新数据是下一个窗口的数据，会关闭上一个窗口.
    *
    * WaterMark 水印，用来解决网络延迟问题.
-   * watermark就是一个时间戳,flink为数据流添加水印。即: 收到一条消息后，额外给其加一个时间字段，就是水印.
+   * WaterMark就是一个时间戳,flink为数据流添加水印。即: 收到一条消息后，额外给其加一个时间字段，就是水印.
    * 一般人为添加的消息的水印比事件时间晚一些，一般几秒钟.
    * 窗口是否关闭，按照水印时间来判断，但原有事件时间不会被修改，窗口的边界依然是事件时间EventTime来决定的.
    * 【当数据流添加水印后，会按水印时间来触发窗口计算】
    * 【接收到的水印时间 >= 窗口的endTime且窗口内有数据，则触发计算】
    *
    * 水印的计算: 事件时间 - 设置的水印长度 = 水印时间.如:
-   * EventTime = 10:30, 水印长度2s，那么水印时间就是 10:28
+   * EventTime = 10:30, 水印长度2s, 那么水印时间就是 10:28
    *
    * 水印的作用: 在不影响按事件时间判断数据属于哪个窗口的前提下，延迟某个窗口的关闭时间，让其等待一会儿延迟数据.
    * ------- 示例 -------:
@@ -560,6 +562,8 @@ object FlinkHighLevel1 {
    * 比如list.keyBy(0) 那么分组后的多个组公用一个水印.
    * hadoop满足条件后，会将spark，flink的也触发.
    *
+   * ======》 Watermark是一个时间戳，它表示小于该时间戳的事件都已经到达了。
+   *
    * 【生成方式】
    * 1、周期性的计算一批新到数据的水印是多少. （更常用）
    * 2、每条数据都进行水印的处理.
@@ -573,16 +577,15 @@ object FlinkHighLevel1 {
     import org.apache.flink.api.scala._
 
     senv.setParallelism(1)
-
     senv.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
 
     val socketStream = senv.socketTextStream("hiwes", 9999)
-    val tuple = socketStream.map(x => {
+    val tuple: DataStream[(String, Long)] = socketStream.map(x => {
       val arr = x.split(" ")
       (arr(0), arr(1).toLong)
     })
 
-    val withWMStream = tuple.assignTimestampsAndWatermarks(new AssignerWithPeriodicWatermarks[(String, Long)] {
+    val withWMStream: DataStream[(String, Long)] = tuple.assignTimestampsAndWatermarks(new AssignerWithPeriodicWatermarks[(String, Long)] {
 
       final val simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS")
 
@@ -595,16 +598,21 @@ object FlinkHighLevel1 {
       // 定义上一次水印时间
       var oldWaterMarkTS = 0L
 
+      // 用于生成新的水位线，新的水位线只有大于当前水位线才有效。 // todo 指定函数1
       override def getCurrentWatermark: Watermark = {
         val newWaterMarkTS = currentMaxTimeStamp - maxOutOfOrderness
         if (newWaterMarkTS > oldWaterMarkTS) oldWaterMarkTS = newWaterMarkTS
         new Watermark(oldWaterMarkTS)
       }
 
+      // todo 在实际的生产中Periodic的方式必须结合时间和积累条数
+      // todo 两个维度继续周期性产生Watermark，否则在极端情况下会有很大的延时。
+
+      // 用于从消息中提取事件时间 // todo 指定函数2
       override def extractTimestamp(element: (String, Long), previousElementTimestamp: Long): Long = {
         val ts = element._2
 
-        if (ts > currentMaxTimeStamp) currentMaxTimeStamp = ts
+        if (ts > currentMaxTimeStamp) currentMaxTimeStamp = ts // 将当前的水印时间,赋值给当前时间戳.
 
         println("word: " + element._1 + ", " +
           "event time: " + simpleDateFormat.format(new Date(ts)) + ", " +
@@ -615,7 +623,7 @@ object FlinkHighLevel1 {
       }
     })
 
-    val windowedStream = withWMStream.keyBy(0)
+    val windowedStream: WindowedStream[(String, Long), Tuple, TimeWindow] = withWMStream.keyBy(0)
       .window(TumblingEventTimeWindows.of(Time.seconds(5)))
 
     windowedStream.apply(new WindowFunction[(String, Long), (String, Int), Tuple, TimeWindow] {
@@ -636,7 +644,6 @@ object FlinkHighLevel1 {
         out.collect((word, count))
         println("windowStart: " + simpleDataFormat.format(new Date(windowStart)) + ", " +
           "windowEnd: " + simpleDataFormat.format(new Date(windowEnd)))
-
       }
     }).print()
 
@@ -647,10 +654,10 @@ object FlinkHighLevel1 {
    * 4.2 水印无法解决长期延迟的情况，比如长期停电之类.
    * 解决这个问题，就需要使用————延迟数据处理机制（allowedLateness方法）
    * waterMark和Window机制解决了流式数据的乱序问题，而allowedLateness机制，
-   * 主要的办法就是给定一个允许延迟的时间，在改时间范围内依然可以接受处理延迟数据.
+   * 主要的办法就是给定一个允许延迟的时间，在该时间范围内依然可以接受处理延迟数据.
    * 1、设置允许延迟的时间: allowedLateness(lateness:Time)
    * ------ 设置窗口后调用，设置之后，当watermark满足条件，只触发执行，不触发关闭.
-   * ------ 如果云讯时间内这个窗口还有数据进来，每来一条，就会和已经计算过的数据一起再计算一次.
+   * ------ 如果允许时间内这个窗口还有数据进来，每来一条，就会和已经计算过的数据一起再计算一次.
    * 2、保存延迟数据: sideOutputLateData(outputTag:OutputTag[T])
    * 3、获取延迟数据: DataStream.getSideOutput(tag:OutputTag[X])
    */
@@ -672,9 +679,8 @@ object FlinkHighLevel1 {
       }
     })
 
-    val windowedStream = watermarks.keyBy(0).timeWindow(Time.seconds(5))
-
-    val windowedStreamWithLateness = windowedStream.allowedLateness(Time.seconds(2))
+    val windowedStreamWithLateness = watermarks.keyBy(0).timeWindow(Time.seconds(5))
+      .allowedLateness(Time.seconds(2)) // 注意，需要在window之后调用.上面设置水印就是当前时间，这里设置延迟处理时间2s.
 
     windowedStreamWithLateness.apply(new WindowFunction[(String, Long), (String, Int), Tuple, TimeWindow] {
       override def apply(tuple: Tuple, window: TimeWindow, input: Iterable[(String, Long)], out: Collector[(String, Int)]): Unit = {
@@ -725,8 +731,8 @@ object FlinkHighLevel1 {
       .timeWindow(Time.seconds(5))
       .allowedLateness(Time.seconds(2))
 
-    val outputTag = new OutputTag[(String, Long)]("side output")
-    val sideOutputLateData = allowedLateness.sideOutputLateData(outputTag)
+    val outputTag = new OutputTag[(String, Long)]("side output") // 侧输出标签.
+    val sideOutputLateData = allowedLateness.sideOutputLateData(outputTag) // 侧输出机制.
 
     val result = sideOutputLateData.apply(new WindowFunction[(String, Long), (String, Int), Tuple, TimeWindow] {
       override def apply(tuple: Tuple, window: TimeWindow, input: Iterable[(String, Long)], out: Collector[(String, Int)]): Unit = {
@@ -747,7 +753,6 @@ object FlinkHighLevel1 {
     sideOutput.print("late >>> ")
 
     senv.execute()
-
   }
 
   /**
@@ -876,6 +881,10 @@ object FlinkHighLevel1 {
 
   /**
    * 6.Flink的状态State管理.
+   * 注意:
+   * 1] state一般指一个具体的task/operator的状态。
+   * 2] 而checkpoint则表示了一个Flink Job，在一个特定时刻的一份全局状态快照，即包含了所有task/operator的状态。
+   *
    * 无状态流处理，每次只能转换一条输入记录，且仅根据最新的输入记录输出结果.
    * 需要使用状态的场景举例:
    * 1、去重.  记录所有的主键。
@@ -889,12 +898,20 @@ object FlinkHighLevel1 {
    *
    * 【State的类型划分】   Flink有2种基本类型的State:
    * 1、Keyed State 键控状态.
+   * 就是基于KeyedStream上的状态。这个状态是跟特定的key绑定的，对KeyedStream流上的每一个key，可能都对应一个state。
    * 2、Operator State 算子状态.
-   * 而这两种类型，，可以以2种形式存在:
-   * 1、raw state 原始状态.需要用户自己管理和序列化，数据结构为：字节数组。自定义Operator时使用。
-   * --- 原生态State。
+   * 跟一个特定operator的一个并发实例绑定，整个operator只对应一个state。
+   *
+   * 相比较而言，在一个operator上，可能会有很多个key，从而对应多个keyed state。
+   *
+   * Flink中的Kafka Connector，就使用了operator state。它会在每个connector实例中，保存该实例中消费topic的所有(partition, offset)映射。
+   *
+   * 而这两种类型，可以以2种形式存在:
+   * 1、raw state 原始状态.
+   * --- 原生态State。需要用户自己管理和序列化，数据结构为：字节数组。自定义Operator时使用。
+   *
    * 2、managed state 托管状态.
-   * --- flink自动管理的State。Runtime管理、自动存储自动回复，内存管理上可自动优化。数据结构为：Value、List、Map等。大多数情况均可用.
+   * --- flink自动管理的State。Runtime管理、自动存储自动回复，内存管理上可自动优化。数据结构为：ValueState, ListState, MapState等。大多数情况均可用.
    */
   def stateCheckpointTest(senv: StreamExecutionEnvironment): Unit = {
     // Keyed State。键控状态
@@ -903,7 +920,7 @@ object FlinkHighLevel1 {
     // Operator State。算子状态
     operatorStateCheckpoint(senv)
 
-    // Broadcast State。
+    // Broadcast State。广播变量状态
     broadcastStateCheckpoint(senv)
 
     senv.execute()
@@ -919,10 +936,10 @@ object FlinkHighLevel1 {
    * --- get操作: ValueState.value()
    * --- set操作: ValueState.update(value:T)
    * 2、ListState[T] 即key上的状态值为一个列表，列表元素数据类型为T.
-   * --- ListState.add(value:T)
-   * --- ListState.addAll(values: List[T])
-   * --- ListState.get()  返回Iterable[T]
-   * --- ListState.update(values: List[T])
+   * --- 附加值操作: ListState.add(value:T)
+   * --- 附加值操作: ListState.addAll(values: List[T])
+   * --- 获取值操作: ListState.get()  返回Iterable[T]
+   * --- set操作: ListState.update(values: List[T])
    * 3、MapState[UK, UV] 即状态值为一个map，用户通过put和putAll添加数据.
    * --- MapState.get(key: K)
    * --- MapState.put(key: K, value: V)
@@ -934,7 +951,9 @@ object FlinkHighLevel1 {
    * --- ReducingState.addAll(values: List[T])
    * --- ReducingState.get()
    * --- ReducingState.undate(values: List[T])
-   * 5、所有类型的状态还有一个clear()方法，清除当前key下的状态数据，也就是当前输入元素的Key.
+   * 5、FoldingState[T] 跟ReducingState有点类似。【在当前版本已经删除】 @deprecated
+   * --- 不过它的状态值类型可以与add方法中传入的元素类型不同。
+   * 6、所有类型的状态还有一个clear()方法，清除当前key下的状态数据，也就是当前输入元素的Key.
    *
    * 【注意】
    * 以上所有的State对象，仅用于与状态进行交互（更新、删除、清空等），
@@ -944,9 +963,10 @@ object FlinkHighLevel1 {
    * 2、ListStateDescriptor.
    * 3、ReducingStateDescriptor.
    * 4、MapStateDescriptor.
+   *
    * 状态通过RuntimeContext进行访问，因此只能在Rich Function中使用。提供了以下方法:
    * 1、def getState(vsd:ValueStateDescriptor[T]):ValueState = {}
-   * 2、def getReducing(rsd:ReducingStateDescriptor[T]):ReducingState = {}
+   * 2、def getReducingState(rsd:ReducingStateDescriptor[T]):ReducingState = {}
    * 3、def getListState(lsd:ListStateDescriptor[T]):ListState = {}
    * 4、def getAggregatingState(asd:AggregatingStateDescriptor[IN, ACC, OUT]): AggregatingState[IN, OUT] = {}
    * 5、def getMapState(msd:MapStateDescriptor[UK,UV]):MapState[UK, UV] = {}
@@ -991,6 +1011,19 @@ object FlinkHighLevel1 {
 
       override def open(parameters: Configuration): Unit = {
         super.open(parameters)
+
+        /**
+         * 调用了RichFlatMapFunction.getRuntimeContext().getState方法，
+         * 最终会调用StreamingRuntimeContext.getState方法。
+         * public <T> ValueState<T> getState(ValueStateDescriptor<T> stateProperties) {
+         * KeyedStateStore keyedStateStore = checkPreconditionsAndGetKeyedStateStore(stateProperties);
+         * stateProperties.initializeSerializerUnlessSet(getExecutionConfig());
+         * return keyedStateStore.getState(stateProperties);
+         * }
+         * checkPreconditionsAndGetKeyedStateStore方法中：
+         * KeyedStateStore keyedStateStore = operator.getKeyedStateStore();
+         * return keyedStateStore;
+         */
         state = getRuntimeContext.getState(new ValueStateDescriptor[(String, Int)](
           "reduceState",
           TypeInformation.of(new TypeHint[(String, Int)] {
@@ -1079,7 +1112,7 @@ object FlinkHighLevel1 {
    * 将广告数据Source装变为BroadcastDataStream对象
    * 基于socket的Source connect 广告Source，得到BroadcastConnectedStream
    * 对BroadcastConnectedStream调用process()分别处理数据流和广播流.
-   * 打印结果，查看动态变化
+   * 打印结果，查看动态变化。
    */
   def broadcastStateCheckpoint(senv: StreamExecutionEnvironment): Unit = {
     import org.apache.flink.api.scala._
@@ -1246,16 +1279,12 @@ object FlinkHighLevel1 {
 
     // 设置checkpoint周期执行时间.
     senv.enableCheckpointing(5000)
-
     // 设置checkpoint执行模式，最多执行一次或最少执行一次.
     senv.getCheckpointConfig.setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE)
-
     // 设置checkpoint的超时时间
     senv.getCheckpointConfig.setCheckpointTimeout(60000)
-
     // 如果在制作快照过程中出现错误，是否让整体任务失败.
     senv.getCheckpointConfig.setFailOnCheckpointingErrors(false)
-
     // 设置同一时间有多少个checkpoint可以同时执行
     senv.getCheckpointConfig.setMaxConcurrentCheckpoints(1)
 
@@ -1268,7 +1297,8 @@ object FlinkHighLevel1 {
     // 全局调整.
     // 修改flink-conf.yaml:
     // state.backend:filesystem || jobmanager || rocksdb
-    // state.checkpoints.dis: hdfs://hiwes:8029/flink/checkpoints
+    // state.checkpoints.dir: hdfs://hiwes:8029/flink/checkpoints
+    //
     // 其中state.backend的值可以使以下几种:
     // jobmanager(MemoryStateBackend)  filesystem(FsStateBackend)  rocksdb(RocksDBStateBackend)
 
@@ -1294,19 +1324,14 @@ object FlinkHighLevel1 {
     senv.enableCheckpointing(5000)
     //    senv.getCheckpointConfig.setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE)
     senv.getCheckpointConfig.setCheckpointingMode(CheckpointingMode.AT_LEAST_ONCE)
-
     // 默认检查点不被保留，所以可启用外部持久化检查点,并指定保留策略.
     senv.getCheckpointConfig.enableExternalizedCheckpoints(CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION)
-
     // Checkpointing的超时时间，超时未完成，则被终止.
     senv.getCheckpointConfig.setCheckpointTimeout(60000)
-
     // CheckPointing的最小时间间隔，用于指定上一个checkpoint完成之后最小等多久可以触发另一个checkpoint
     senv.getCheckpointConfig.setMinPauseBetweenCheckpoints(500)
-
     // 指定运行中的Checkpoint最多可以有多少个
     senv.getCheckpointConfig.setMaxConcurrentCheckpoints(1)
-
     // 用于指定Checkpoint发生异常时，是否该fall这个task，默认为true。设定为false，则task会拒绝Checkpoint然后继续运行.
     senv.getCheckpointConfig.setFailOnCheckpointingErrors(false)
 
@@ -1384,10 +1409,10 @@ object FlinkHighLevel1 {
     ))
 
     // 失败率策略: 当程序在一分钟内失败3次，则程序退出，每次5s间隔
-    //    senv.setRestartStrategy(RestartStrategies.failureRateRestart(3,
-    //      org.apache.flink.api.common.time.Time.minutes(1),
-    //      org.apache.flink.api.common.time.Time.seconds(5))
-    //    )
+//    senv.setRestartStrategy(RestartStrategies.failureRateRestart(3,
+//      org.apache.flink.api.common.time.Time.minutes(1),
+//      org.apache.flink.api.common.time.Time.seconds(5))
+//    )
 
     val socketStream = senv.socketTextStream("hiwes", 9999)
 
@@ -1406,7 +1431,7 @@ object FlinkHighLevel1 {
 
   /**
    * 7.4 SavePoint.
-   * SavePoint 是根据Flink Checkpoinging机制所创建的流作业执行状态的一致镜像.
+   * SavePoint 是根据Flink Checkpointing机制所创建的流作业执行状态的一致镜像.
    * 可以使用SavePoint进行Flink作业的停止与重启、fork或更新.
    * SavePoint由2部分组成:
    * 1、稳定存储（HDFS、S3）上包含二进制文件的目录（一般很大）
@@ -1707,7 +1732,7 @@ object FlinkHighLevel1 {
    * 5、BroadcastProcessFunction 用于广播.
    * 6、KeyedBroadcastProcessFunction 用于KeyBy()之后的广播.
    * 7、ProcessWindowFunction 窗口增量聚合.
-   * 8、ProcessAllWindowFUnction 全窗口聚合.
+   * 8、ProcessAllWindowFunction 全窗口聚合.
    *
    * ProcessFunction 可以看做是一个具有keyed state和timers访问权限的FlatMapFunction。
    * 1、通过RuntimeContext访问keyed State;
@@ -1855,11 +1880,5 @@ object FlinkHighLevel1 {
   }
 
   case class TemperatureEvent(rackID: Int, temperature: Double, timestamp: Long)
-
-  // 10.Flink综合案例————双流Join.
-
-  // 11.FLink综合案例————热点TopN.
-
-  // 12.Flink综合案例————布隆过滤器.
 
 }

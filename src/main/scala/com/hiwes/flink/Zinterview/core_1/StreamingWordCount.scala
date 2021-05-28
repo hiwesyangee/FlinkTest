@@ -1,6 +1,6 @@
 package com.hiwes.flink.Zinterview.core_1
 
-import org.apache.flink.streaming.api.scala.StreamExecutionEnvironment
+import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironment}
 import org.apache.flink.streaming.api.windowing.time.Time
 
 /**
@@ -12,12 +12,12 @@ import org.apache.flink.streaming.api.windowing.time.Time
 object StreamingWordCount {
   def main(args: Array[String]): Unit = {
 
-    val env = StreamExecutionEnvironment.getExecutionEnvironment
-
-    val stream = env.socketTextStream("hiwes", 9999)
+    val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
+    val data: DataStream[String] = env.socketTextStream("localhost", 9999)
 
     import org.apache.flink.api.scala._
-    stream.flatMap(_.toLowerCase.split("\t"))
+
+    data.flatMap(_.toLowerCase().split("\t"))
       .filter(_.nonEmpty)
       .map((_, 1))
       .keyBy(0)
@@ -26,7 +26,7 @@ object StreamingWordCount {
       .print()
       .setParallelism(1)
 
-    env.execute("StreamWordCount")
+    env.execute()
 
   }
 }
